@@ -4,12 +4,14 @@ For a description of the format, see http://www.ims.uni-stuttgart.de/forschung/r
 
 ## How to run
 
-* copy or link the uncompressed/unpacked corpus file into the current directory, this script expects the file
-  tiger_release_aug07.corrected.16012013.xml
-  Adapt the script if the name is different
-* make sure run.sh is executable, groovy is installed and GATE_HOME is set
-* ./run.sh
-* this should create directory out with documents which contain 10 sentences each, 5048 documents in total
+* Make sure you have lots of RAM - this conversion is currently done by loading the whole input XML file into memory!
+* make sure the uncompressed/unpacked corpus file is accessible, this script expects the format of
+   file tiger_release_aug07.corrected.16012013.xml
+* make sure convert.sh is executable, groovy is installed and GATE_HOME is set
+* create some output directory to hold the generated GATE files
+* ./convert.sh [-n 1] tigerInfile outDir
+* this should fill the output directory out with documents which contain 1 sentence each. The
+  parameter "-n 99" can be used to specify a different number of sentences per document.
 
 ## Metadata
 

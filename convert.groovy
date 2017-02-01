@@ -5,22 +5,62 @@ import groovy.util.XmlParser
 import groovy.util.XmlSlurper
 import gate.*
 import java.utils.*
+import groovy.util.CliBuilder
 
+def cli = new CliBuilder(usage:'convert.groovy [-h] [-v] [-n 1] infile outdir')
+cli.h(longOpt: 'help', "Show usage information")
+cli.n(longOpt: 'nsent', args: 1, argName: 'nsent', "Number of sentences per output document")
+cli.v(longOpt: 'verbose', "Log each written document")
 
-if(args.size() != 2) {
-  System.err.println("Need two arguments: the tiger corpus file and the output directory")
+def options = cli.parse(args)
+if(options.h) {
+  cli.usage()
+  return
+}
+
+verbose=false
+if(options.v) verbose=true
+
+def nsent = 1
+if(options.n) {
+  nsent = options.n.toInteger()
+}
+
+def posArgs = options.arguments()
+if(posArgs.size() != 2) {
+  cli.usage()
   System.exit(1)
 }
 
-inFile = args[0]
-outDir = args[1]
+inFile = new File(posArgs[0])
+outDir = new File(posArgs[1])
 
-SMAX = 10
+if(!inFile.exists()) {
+  System.err.println("ERROR: file does not exist: "+inFile.getAbsolutePath())
+  System.exit(1)
+}
+if(!outDir.exists() || !outDir.isDirectory()) {
+  System.err.println("ERROR: file does not exist or is not a directory: "+outDir.getAbsolutePath())
+  System.exit(1)
+}
+
+System.err.println("INFO: input file is:        "+inFile)
+System.err.println("INFO: output dir is:        "+outDir)
+System.err.println("INFO: sentences per doc:    "+nsent)
+
+SMAX = nsent
 
 gate.Gate.init()
-System.err.println("Loading corpus...")
-corpus = new XmlSlurper().parse(new File(inFile))
-System.err.println("Corpus loaded")
+rt = Runtime.getRuntime()
+rt.gc()
+memTotal = rt.totalMemory()
+memFree  = rt.freeMemory()
+System.err.println("Loading corpus, total memory="+memTotal+", free="+memFree+" ...")
+corpus = new XmlSlurper().parse(inFile)
+rt.gc()
+memTotal = rt.totalMemory()
+memFree  = rt.freeMemory()
+System.err.println("Corpus loaded, total memory="+memTotal+", free="+memFree)
 
 // now first of all, get the header info want to keep
 meta = corpus.head.meta
@@ -28,8 +68,14 @@ meta = corpus.head.meta
 body = corpus.body
 // iterate over each sentence
 
+nDocs = 0
 
-def writeDocument(sb, fs, froms, tos, name) {
+def makeDocname(from,to) {
+  if(from.equals(to)) return "tiger_"+from+".xml"
+  else return "tiger_"+from+"_"+to+".xml"
+}
+
+def writeDocument(sb, fs, froms, tos, name, sentenceInfos) {
   //System.err.println("DEBUG: Writing doc "+name)
   // sanity check
   if(fs.size() == froms.size() && fs.size() == tos.size()) {
@@ -51,13 +97,19 @@ def writeDocument(sb, fs, froms, tos, name) {
   fmDoc.put("tiger.description",meta.description.text())
   fmDoc.put("tiger.history",meta.history.text())
   //System.err.println("DEBUG: adding features: "+fs.size())
+  outputAS = doc.getAnnotations("Key")
   for(int i=0; i<fs.size(); i++) {
-    gate.Utils.addAnn(doc.getAnnotations("Key"),froms.get(i),tos.get(i),"Token",fs.get(i));
+    gate.Utils.addAnn(outputAS,froms.get(i),tos.get(i),"Token",fs.get(i));
+  }
+  for(sentenceInfo in sentenceInfos) {
+    gate.Utils.addAnn(outputAS,sentenceInfo['from'],sentenceInfo['to'],"Sentence",gate.Utils.featureMap("sentenceId",sentenceInfo['sId']))
   }
   //System.err.println("DEBUG: featurs added, writing")
   outFile = new File(outDir,name)
   gate.corpora.DocumentStaxUtils.writeDocument(doc,outFile)
-  //System.err.println("Document saved: "+outFile)
+  gate.Factory.deleteResource(doc)
+  if(verbose) System.err.println("Saved GATE document "+outFile)
+  nDocs += 1
 }
 
 
@@ -70,6 +122,7 @@ ArrayList<Integer> tos = new ArrayList<Integer>()
 curFrom = 0
 curTo = 0
 sidFrom = ""
+sentenceInfos = []
 body.s.each { sentence -> 
   //System.println("Processing sentence " + sentence.attributes()["id"])
   // we count sentences: whenever we got SMAX, we save what we have to
@@ -81,6 +134,8 @@ body.s.each { sentence ->
   sidTo = sentence.attributes()["id"]
   // get the list of terminals
   terms = sentence.graph.terminals.t
+  addSpace = false     // at the beginning of a sentence, we do not add a space either
+  sFrom = curFrom
   terms.each { term -> 
     a = term.attributes()
     string = a["word"]
@@ -97,26 +152,36 @@ body.s.each { sentence ->
       "mood",a["mood"]
     )
     // add the string to the sb and remember the start and end offset of 
-    // the annotation
-    if(string.equals(",") || string.equals(";") || string.equals("!") || string.equals("?") || string.equals(".") ||
-       string.equals(":") || string.equals(")")) {
+    // the annotation. Make sure not to add a space before the current word
+    // if the current word is one of the characters in the regexp
+    if(string.matches("[,;!?.:)}\\]']")) {
       sb.append(string)
       curTo += string.size()
+      addSpace = true
     } else {
-      sb.append(" ")
+      // if the current word is not one of the characters above, add a space
+      // before it, except the last word was one after which we do not want to
+      // add a space either
+      if(addSpace) { 
+        sb.append(" ")
+        curFrom += 1
+      }
       sb.append(string)
-      curFrom += 1
-      curTo = curTo + string.size() +1
+      curTo = curFrom + string.size()
+      addSpace = true
     }
+    if(string.matches("[`({\\[]")) addSpace = false
     fs.add(fm)
     froms.add(curFrom)
     tos.add(curTo)
     curFrom = curTo
   }
+  sTo = curTo
+  // add the sentence span and id
+  sentenceInfos.add([from:sFrom, to:sTo, sId:sidTo])
   if(snr == SMAX) {
     // save what we have to a gate document
-    name = "tiger_" + sidFrom + "_" + sidTo + ".xml"
-    writeDocument(sb,fs,froms,tos, name)
+    writeDocument(sb,fs,froms,tos, makeDocname(sidFrom,sidTo), sentenceInfos)
     // reset 
     snr = 0
     curFrom = 0
@@ -126,12 +191,19 @@ body.s.each { sentence ->
     fs = new ArrayList<FeatureMap>()
     froms = new ArrayList<Integer>()
     tos = new ArrayList<Integer>()
+    sentenceInfos = []
+  } else {
+    // not the last sentence, add a new line
+    sb.append("\n");
+    curFrom += 1
+    curTo += 1
   }
   
 }
 
+System.err.println("Processing finished, documents written: "+nDocs)
+
 if(sb.length() > 0) {
-  name = "tiger_" + sidFrom + "_" + sidTo + ".xml"
-  writeDocument(sb,fs,froms,tos,name)
+  writeDocument(sb,fs,froms,tos,makeDocname(sidFrom,sidTo),sentenceInfos)
 }
 
