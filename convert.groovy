@@ -112,7 +112,11 @@ def writeDocument(sb, fs, froms, tos, name, sentenceInfos) {
   nDocs += 1
 }
 
-
+def tokenInfo2Fm(tokenInfo) {
+  fm = gate.Utils.featureMap()
+  fm.putAll(tokenInfo)
+  return fm
+}
 
 snr = 0
 StringBuilder sb = new StringBuilder()
@@ -120,6 +124,7 @@ ArrayList<FeatureMap> fs = new ArrayList<FeatureMap>()
 ArrayList<Integer> froms = new ArrayList<Integer>()
 ArrayList<Integer> tos = new ArrayList<Integer>()
 curFrom = 0
+curFromPrev = 0
 curTo = 0
 sidFrom = ""
 sentenceInfos = []
@@ -139,22 +144,17 @@ body.s.each { sentence ->
   terms.each { term -> 
     a = term.attributes()
     string = a["word"]
-    fm = gate.Utils.featureMap(
-      "lemma",a["lemma"],
-      "pos",a["pos"],
-      "morph",a["morph"],
-      "case",a["case"],
-      "number",a["number"],
-      "gender",a["gender"],
-      "person",a["person"],
-      "degree",a["degree"],
-      "tense",a["tense"],
-      "mood",a["mood"]
-    )
+    fm = tokenInfo2Fm(a)
     // add the string to the sb and remember the start and end offset of 
     // the annotation. Make sure not to add a space before the current word
     // if the current word is one of the characters in the regexp
-    if(string.matches("[,;!?.:)}\\]']")) {
+    if(string.equals("*T*")) {
+      // this special construct indicates some kind of multitoken word so we 
+      // create another token for this without adding any string to the document text
+      // and with the same offsets as the previous token (assuming this will 
+      // always occur after the actual word token)
+      curFrom = curFromPrev
+    } else if(string.matches("[,;!?.:)}\\]']")) {
       sb.append(string)
       curTo += string.size()
       addSpace = true
@@ -174,6 +174,7 @@ body.s.each { sentence ->
     fs.add(fm)
     froms.add(curFrom)
     tos.add(curTo)
+    curFromPrev = curFrom
     curFrom = curTo
   }
   sTo = curTo
@@ -185,6 +186,7 @@ body.s.each { sentence ->
     // reset 
     snr = 0
     curFrom = 0
+    curFromPrev = 0
     curTo = 0
     sidFrom = ""
     sb = new StringBuilder()
