@@ -11,6 +11,7 @@ def cli = new CliBuilder(usage:'convert.groovy [-h] [-v] [-n 1] infile outdir')
 cli.h(longOpt: 'help', "Show usage information")
 cli.n(longOpt: 'nsent', args: 1, argName: 'nsent', "Number of sentences per output document")
 cli.v(longOpt: 'verbose', "Log each written document")
+cli.f(longOpt: 'filepref', args: 1, argName: 'filepref', "Prefix to use for the output files, default is input file basename")
 
 def options = cli.parse(args)
 if(options.h) {
@@ -25,6 +26,9 @@ def nsent = 1
 if(options.n) {
   nsent = options.n.toInteger()
 }
+
+filepref = ""
+if(options.f) filepref = options.f
 
 def posArgs = options.arguments()
 if(posArgs.size() != 2) {
@@ -44,9 +48,15 @@ if(!outDir.exists() || !outDir.isDirectory()) {
   System.exit(1)
 }
 
+if(filepref.isEmpty()) {
+  filepref = inFile.getName()
+  filepref = filepref.replaceAll('\\.[a-zA-Z]+$',"")
+}
+
 System.err.println("INFO: input file is:        "+inFile)
 System.err.println("INFO: output dir is:        "+outDir)
 System.err.println("INFO: sentences per doc:    "+nsent)
+System.err.println("INFO: output file prefix:   "+filepref)
 
 SMAX = nsent
 
@@ -71,8 +81,8 @@ body = corpus.body
 nDocs = 0
 
 def makeDocname(from,to) {
-  if(from.equals(to)) return "tiger_"+from+".xml"
-  else return "tiger_"+from+"_"+to+".xml"
+  if(from.equals(to)) return filepref+"_"+from+".xml"
+  else return filepref+"_"+from+"_"+to+".xml"
 }
 
 def writeDocument(sb, fs, froms, tos, name, sentenceInfos) {
