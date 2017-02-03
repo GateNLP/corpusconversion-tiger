@@ -4,7 +4,7 @@ For a description of the format, see http://www.ims.uni-stuttgart.de/forschung/r
 
 ## How to run
 
-* Make sure you have lots of RAM - this conversion is currently done by loading the whole input XML file into memory!
+* Make sure you have lots of RAM - this conversion is currently done by loading the whole input XML file into memory! The German Tiger corpus currently needs about 3.5G of RAM and this is what is used by default in the conversion script.
 * make sure the uncompressed/unpacked corpus file is accessible, this script expects the format of
    file tiger_release_aug07.corrected.16012013.xml
 * make sure convert.sh is executable, groovy is installed and GATE_HOME is set
